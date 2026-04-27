@@ -1,0 +1,10 @@
+{
+  "id": "life-ledger",
+  "name": "LifeLedger",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Obsidian 本地个人记账与财务仪表盘插件。",
+  "author": "LifeLedger",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}

@@ -1,0 +1,879 @@
+.life-ledger-container {
+  height: 100%;
+}
+
+.life-ledger-root {
+  box-sizing: border-box;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px;
+  padding-bottom: 96px;
+}
+
+.life-ledger-view {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.life-ledger-view h1 {
+  margin: 0 0 24px;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.life-ledger-section {
+  margin-bottom: 28px;
+}
+
+.life-ledger-section h2 {
+  margin: 0 0 14px;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.life-ledger-collapsible-section.is-collapsed {
+  margin-bottom: 16px;
+}
+
+.life-ledger-section-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.life-ledger-section-header h2,
+.life-ledger-section-header h3 {
+  margin: 0;
+}
+
+.life-ledger-section-header h3 {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.life-ledger-section-toggle {
+  flex: 0 0 auto;
+}
+
+.life-ledger-collapsible-section.is-collapsed .life-ledger-section-header {
+  margin-bottom: 0;
+}
+
+.life-ledger-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+}
+
+.life-ledger-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.life-ledger-field label {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.life-ledger-field input,
+.life-ledger-field select {
+  width: 100%;
+}
+
+.life-ledger-actions {
+  display: flex;
+  gap: 8px;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+}
+
+.life-ledger-editing-hint {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.life-ledger-month-switcher {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28px;
+  padding: 12px 0;
+  border-top: 1px solid var(--background-modifier-border);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.life-ledger-month-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.life-ledger-distribution {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.life-ledger-ratio-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.life-ledger-summary-groups {
+  display: grid;
+  gap: 14px;
+}
+
+.life-ledger-summary-group {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+}
+
+.life-ledger-summary-group.is-primary {
+  padding: 16px;
+  border-color: var(--background-modifier-border-hover);
+  background: var(--background-primary);
+}
+
+.life-ledger-summary-group-header {
+  margin-bottom: 12px;
+}
+
+.life-ledger-summary-group-header h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.life-ledger-summary-group.is-primary .life-ledger-summary-group-header h3 {
+  font-size: 16px;
+}
+
+.life-ledger-summary-group-header p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.life-ledger-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.life-ledger-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+}
+
+.life-ledger-card-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.life-ledger-card-value {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.life-ledger-card.is-income .life-ledger-card-value,
+.life-ledger-record-amount.is-income,
+.life-ledger-record-amount.is-initial {
+  color: var(--color-green);
+}
+
+.life-ledger-card.is-expense .life-ledger-card-value,
+.life-ledger-record-amount.is-expense {
+  color: var(--color-red);
+}
+
+.life-ledger-budget-warnings {
+  margin-top: 18px;
+}
+
+.life-ledger-budget-warnings h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.life-ledger-budget-warning-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--background-modifier-border);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.life-ledger-budget-warning-item {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  color: var(--text-normal);
+}
+
+.life-ledger-budget-warning-item:last-child {
+  border-bottom: none;
+}
+
+.life-ledger-charts {
+  margin-top: 18px;
+}
+
+.life-ledger-charts h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.life-ledger-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.life-ledger-chart-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+}
+
+.life-ledger-chart-card h4 {
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+
+.life-ledger-bar-chart {
+  display: flex;
+  min-height: 180px;
+  align-items: end;
+  justify-content: center;
+  gap: 28px;
+}
+
+.life-ledger-vertical-bar-item {
+  display: grid;
+  width: 96px;
+  grid-template-rows: 120px auto auto;
+  gap: 6px;
+  justify-items: center;
+}
+
+.life-ledger-vertical-bar-track {
+  display: flex;
+  width: 42px;
+  height: 120px;
+  align-items: end;
+  border-radius: 6px;
+  background: var(--background-modifier-border);
+}
+
+.life-ledger-vertical-bar {
+  width: 100%;
+  border-radius: 6px;
+}
+
+.life-ledger-vertical-bar.is-income,
+.life-ledger-horizontal-bar-fill.is-asset {
+  background: var(--color-green);
+}
+
+.life-ledger-vertical-bar.is-expense,
+.life-ledger-horizontal-bar-fill.is-expense {
+  background: var(--color-red);
+}
+
+.life-ledger-chart-label,
+.life-ledger-chart-value {
+  font-size: 12px;
+  text-align: center;
+}
+
+.life-ledger-chart-value {
+  color: var(--text-muted);
+}
+
+.life-ledger-horizontal-bar-row {
+  margin-bottom: 12px;
+}
+
+.life-ledger-horizontal-bar-meta {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 5px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.life-ledger-horizontal-bar-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--background-modifier-border);
+}
+
+.life-ledger-horizontal-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.life-ledger-calendar {
+  margin-top: 18px;
+}
+
+.life-ledger-yearly {
+  margin-top: 18px;
+}
+
+.life-ledger-yearly-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.life-ledger-yearly-header h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.life-ledger-yearly-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.life-ledger-yearly-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.life-ledger-yearly-block {
+  margin-top: 14px;
+}
+
+.life-ledger-yearly-block h4 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.life-ledger-yearly-month-list,
+.life-ledger-yearly-ranking-list,
+.life-ledger-yearly-record-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--background-modifier-border);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.life-ledger-yearly-month-item,
+.life-ledger-yearly-ranking-item,
+.life-ledger-yearly-record-item {
+  display: grid;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.life-ledger-yearly-month-item {
+  grid-template-columns: 100px repeat(4, minmax(0, 1fr));
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.life-ledger-yearly-month-item.is-current {
+  color: var(--text-normal);
+  font-weight: 650;
+}
+
+.life-ledger-yearly-ranking-item {
+  grid-template-columns: minmax(0, 1fr) minmax(160px, auto);
+}
+
+.life-ledger-yearly-record-item {
+  grid-template-columns: 110px 56px minmax(90px, 1fr) minmax(80px, 1fr) minmax(90px, 1fr) 110px minmax(100px, 1.5fr);
+}
+
+.life-ledger-yearly-month-item:last-child,
+.life-ledger-yearly-ranking-item:last-child,
+.life-ledger-yearly-record-item:last-child {
+  border-bottom: none;
+}
+
+.life-ledger-calendar-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.life-ledger-calendar-header h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.life-ledger-calendar-list,
+.life-ledger-calendar-detail-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.life-ledger-calendar-list {
+  border-top: 1px solid var(--background-modifier-border);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.life-ledger-calendar-day {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.life-ledger-calendar-day:last-child {
+  border-bottom: none;
+}
+
+.life-ledger-calendar-day-row,
+.life-ledger-calendar-detail-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.life-ledger-calendar-date {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.life-ledger-calendar-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.life-ledger-calendar-detail-list {
+  margin-top: 10px;
+  padding-left: 12px;
+  border-left: 2px solid var(--background-modifier-border);
+}
+
+.life-ledger-calendar-detail-item {
+  padding: 8px 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.life-ledger-calendar-detail-fields {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 56px minmax(90px, 1fr) minmax(80px, 1fr) minmax(90px, 1fr) 110px minmax(100px, 1.5fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.life-ledger-filters {
+  margin-top: 18px;
+}
+
+.life-ledger-filters h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.life-ledger-filter-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.life-ledger-filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.life-ledger-filter-results {
+  margin-top: 14px;
+}
+
+.life-ledger-filter-results h4 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.life-ledger-filter-result-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--background-modifier-border);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.life-ledger-filter-result-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.life-ledger-filter-result-item:last-child {
+  border-bottom: none;
+}
+
+.life-ledger-filter-result-fields {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 110px 56px minmax(90px, 1fr) minmax(80px, 1fr) minmax(90px, 1fr) 110px minmax(100px, 1.5fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.life-ledger-asset-breakdown,
+.life-ledger-bleeding-projects {
+  margin-top: 18px;
+}
+
+.life-ledger-asset-breakdown h3,
+.life-ledger-bleeding-projects h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.life-ledger-asset-list,
+.life-ledger-bleeding-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--background-modifier-border);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.life-ledger-asset-item,
+.life-ledger-bleeding-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.life-ledger-asset-item {
+  flex-direction: row;
+}
+
+.life-ledger-asset-item:last-child,
+.life-ledger-bleeding-item:last-child {
+  border-bottom: none;
+}
+
+.life-ledger-bleeding-main {
+  font-weight: 650;
+}
+
+.life-ledger-bleeding-info {
+  min-width: 0;
+}
+
+.life-ledger-bleeding-meta {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.life-ledger-bleeding-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.life-ledger-bleeding-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.life-ledger-export {
+  margin-top: 18px;
+}
+
+.life-ledger-export h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.life-ledger-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.life-ledger-health {
+  margin-top: 18px;
+}
+
+.life-ledger-health h3,
+.life-ledger-health h4 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.life-ledger-health h4 {
+  margin-top: 12px;
+  font-size: 14px;
+}
+
+.life-ledger-health-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.life-ledger-health-summary,
+.life-ledger-health-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--background-modifier-border);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.life-ledger-health-summary li,
+.life-ledger-health-list li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  overflow-wrap: anywhere;
+}
+
+.life-ledger-health-summary li:last-child,
+.life-ledger-health-list li:last-child {
+  border-bottom: none;
+}
+
+.life-ledger-recent {
+  margin-top: 18px;
+}
+
+.life-ledger-record-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.life-ledger-recent h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.life-ledger-empty {
+  color: var(--text-muted);
+}
+
+.life-ledger-record-list {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--background-modifier-border);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.life-ledger-record {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.life-ledger-record:last-child {
+  border-bottom: none;
+}
+
+.life-ledger-record-details {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 110px 56px minmax(100px, 1.2fr) minmax(80px, 1fr) 110px minmax(100px, 1.5fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.life-ledger-record-date,
+.life-ledger-record-type,
+.life-ledger-record-wallet,
+.life-ledger-record-category,
+.life-ledger-record-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.life-ledger-record-type,
+.life-ledger-record-wallet {
+  color: var(--text-muted);
+}
+
+.life-ledger-record-amount {
+  font-weight: 650;
+  text-align: right;
+}
+
+.life-ledger-record-note {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.life-ledger-record-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.life-ledger-record-pagination {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.life-ledger-danger-button {
+  color: var(--text-error);
+}
+
+@media (max-width: 720px) {
+  .life-ledger-root {
+    padding: 16px;
+    padding-bottom: 96px;
+  }
+
+  .life-ledger-section-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .life-ledger-form,
+  .life-ledger-summary,
+  .life-ledger-yearly-summary,
+  .life-ledger-chart-grid,
+  .life-ledger-calendar-metrics,
+  .life-ledger-filter-form,
+  .life-ledger-distribution,
+  .life-ledger-ratio-fields,
+  .life-ledger-bleeding-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .life-ledger-calendar-header,
+  .life-ledger-calendar-day-row,
+  .life-ledger-calendar-detail-item {
+    align-items: flex-start;
+    grid-template-columns: 1fr;
+  }
+
+  .life-ledger-calendar-detail-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .life-ledger-yearly-header,
+  .life-ledger-yearly-ranking-item {
+    align-items: flex-start;
+    grid-template-columns: 1fr;
+  }
+
+  .life-ledger-yearly-actions {
+    justify-content: flex-start;
+  }
+
+  .life-ledger-yearly-month-item,
+  .life-ledger-yearly-record-item {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .life-ledger-filter-result-item {
+    grid-template-columns: 1fr;
+  }
+
+  .life-ledger-filter-result-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .life-ledger-month-switcher {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .life-ledger-month-actions {
+    justify-content: flex-start;
+  }
+
+  .life-ledger-record {
+    grid-template-columns: 1fr;
+  }
+
+  .life-ledger-record-details {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .life-ledger-record-amount {
+    text-align: left;
+  }
+
+  .life-ledger-record-note {
+    grid-column: 1 / -1;
+  }
+
+  .life-ledger-record-actions {
+    justify-content: flex-start;
+  }
+
+  .life-ledger-bleeding-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .life-ledger-bleeding-actions {
+    justify-content: flex-start;
+  }
+}

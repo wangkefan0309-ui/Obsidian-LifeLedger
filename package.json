@@ -1,0 +1,23 @@
+{
+  "name": "life-ledger",
+  "version": "0.1.0",
+  "description": "Obsidian 本地个人记账与财务仪表盘插件。",
+  "main": "main.js",
+  "scripts": {
+    "dev": "esbuild ././main.ts --bundle --external:obsidian --format=cjs --platform=browser --target=es2018 --outfile=main.js --watch",
+    "build": "tsc ./main.ts --noEmit --skipLibCheck --moduleResolution node --target ES2018 --lib DOM,ES2018 && esbuild ././main.ts --bundle --external:obsidian --format=cjs --platform=browser --target=es2018 --outfile=main.js"
+  },
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "personal-finance"
+  ],
+  "author": "LifeLedger",
+  "license": "MIT",
+  "devDependencies": {
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.25.0",
+    "obsidian": "^1.8.7",
+    "typescript": "^5.7.3"
+  }
+}
