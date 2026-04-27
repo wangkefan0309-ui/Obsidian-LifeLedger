@@ -26,9 +26,8 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
 var VIEW_TYPE_LIFE_LEDGER = "life-ledger-dashboard";
-var DATA_ROOT = "LifeLedger";
-var BLEEDING_PROJECTS_PATH = `${DATA_ROOT}/BleedingProjects.md`;
-var EXPORTS_PATH = `${DATA_ROOT}/Exports`;
+var DEFAULT_DATA_ROOT = "LifeLedger";
+var LEGACY_DATA_ROOT = "LifeLedger";
 var DEFAULT_NORMAL_CATEGORIES = ["\u996E\u98DF", "\u4EA4\u901A", "\u8D2D\u7269", "\u5B66\u4E60", "\u5A31\u4E50", "\u751F\u6D3B\u8D39", "\u521B\u4E1A", "\u5176\u4ED6"];
 var DEFAULT_ASSET_CATEGORIES = [
   "\u94F6\u884C\u5361\u50A8\u84C4",
@@ -54,6 +53,7 @@ var DEFAULT_SECTION_COLLAPSE_STATE = {
   healthCheck: true
 };
 var DEFAULT_SETTINGS = {
+  dataRoot: DEFAULT_DATA_ROOT,
   systemStartMonth: getCurrentMonthString(),
   activityWalletInitialAmount: 1500,
   reserveWalletInitialAmount: 0,
@@ -104,6 +104,7 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
     this.settings = {
       ...DEFAULT_SETTINGS,
       ...loaded,
+      dataRoot: normalizeDataRoot(loaded == null ? void 0 : loaded.dataRoot),
       systemStartMonth,
       normalCategories: normalizeCategoryList(
         loaded == null ? void 0 : loaded.normalCategories,
@@ -122,9 +123,11 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
       await this.saveData(this.settings);
     }
   }
-  async saveSettings() {
+  async saveSettings(refreshDashboard = true) {
     await this.saveData(this.settings);
-    await this.refreshDashboardViews();
+    if (refreshDashboard) {
+      await this.refreshDashboardViews();
+    }
   }
   async saveSectionCollapseState() {
     await this.saveData(this.settings);
@@ -152,7 +155,7 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
       date: today
     }));
     await this.learnCategories(recordsToAdd);
-    await this.ensureFolder(DATA_ROOT);
+    await this.ensureFolder(this.getDataRoot());
     await this.ensureFolder(yearPath);
     await this.ensureFolder(monthPath);
     const exists = await this.app.vault.adapter.exists(dayPath);
@@ -190,7 +193,8 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
     await this.app.vault.modify(file, this.replaceLedgerBlock(content, record.date, nextRecords));
   }
   async saveBleedingProject(input) {
-    await this.ensureFolder(DATA_ROOT);
+    const bleedingProjectsPath = this.getBleedingProjectsPath();
+    await this.ensureFolder(this.getDataRoot());
     const project = {
       ...input,
       amount: roundMoney(input.amount),
@@ -198,14 +202,14 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
       id: createRecordId(),
       active: true
     };
-    const exists = await this.app.vault.adapter.exists(BLEEDING_PROJECTS_PATH);
+    const exists = await this.app.vault.adapter.exists(bleedingProjectsPath);
     if (!exists) {
-      await this.app.vault.create(BLEEDING_PROJECTS_PATH, this.formatBleedingFile([project]));
+      await this.app.vault.create(bleedingProjectsPath, this.formatBleedingFile([project]));
       return;
     }
-    const file = this.app.vault.getFileByPath(BLEEDING_PROJECTS_PATH);
+    const file = this.app.vault.getFileByPath(bleedingProjectsPath);
     if (!file) {
-      throw new Error(`\u65E0\u6CD5\u8BFB\u53D6\u6587\u4EF6\uFF1A${BLEEDING_PROJECTS_PATH}`);
+      throw new Error(`\u65E0\u6CD5\u8BFB\u53D6\u6587\u4EF6\uFF1A${bleedingProjectsPath}`);
     }
     const content = await this.app.vault.read(file);
     const projects = parseBleedingProjects(content);
@@ -213,7 +217,7 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
     await this.app.vault.modify(file, this.replaceBleedingBlock(content, projects));
   }
   async updateBleedingProject(project) {
-    const { file, content } = await this.readBleedingFile();
+    const { file, content } = await this.findBleedingFileForProject(project.id);
     const projects = parseBleedingProjects(content);
     const index = projects.findIndex((item) => item.id === project.id);
     if (index === -1) {
@@ -227,7 +231,7 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
     await this.app.vault.modify(file, this.replaceBleedingBlock(content, projects));
   }
   async deleteBleedingProject(projectId) {
-    const { file, content } = await this.readBleedingFile();
+    const { file, content } = await this.findBleedingFileForProject(projectId);
     const projects = parseBleedingProjects(content);
     const nextProjects = projects.filter((project) => project.id !== projectId);
     if (nextProjects.length === projects.length) {
@@ -236,7 +240,7 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
     await this.app.vault.modify(file, this.replaceBleedingBlock(content, nextProjects));
   }
   async toggleBleedingProject(projectId) {
-    const { file, content } = await this.readBleedingFile();
+    const { file, content } = await this.findBleedingFileForProject(projectId);
     const projects = parseBleedingProjects(content);
     const project = projects.find((item) => item.id === projectId);
     if (!project) {
@@ -246,12 +250,16 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
     await this.app.vault.modify(file, this.replaceBleedingBlock(content, projects));
   }
   async getBleedingProjects() {
-    const { file, content } = await this.readBleedingFile();
-    if (!/```life-ledger-bleeding\s*([\s\S]*?)```/.test(content)) {
-      await this.app.vault.modify(file, this.replaceBleedingBlock(content, []));
-      return [];
+    const files = await this.readBleedingFiles();
+    const projects = [];
+    for (const { file, content } of files) {
+      if (!/```life-ledger-bleeding\s*([\s\S]*?)```/.test(content)) {
+        await this.app.vault.modify(file, this.replaceBleedingBlock(content, []));
+        continue;
+      }
+      projects.push(...parseBleedingProjects(content));
     }
-    return parseBleedingProjects(content);
+    return projects;
   }
   async getMonthSummary(month) {
     const monthlyRecords = await this.loadMonthRecords(month);
@@ -294,7 +302,7 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
     const monthPath = this.getMonthPath(`${month}-01`);
     const reviewPath = this.getMonthlyReviewPath(month);
     const content = formatMonthlyReview(month, summary, this.settings);
-    await this.ensureFolder(DATA_ROOT);
+    await this.ensureFolder(this.getDataRoot());
     await this.ensureFolder(yearPath);
     await this.ensureFolder(monthPath);
     const exists = await this.app.vault.adapter.exists(reviewPath);
@@ -315,7 +323,7 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
     const yearPath = this.getYearPath(`${year}-01-01`);
     const reviewPath = this.getYearlyReviewPath(year);
     const content = formatYearlyReview(year, yearlySummary, monthSummary, this.settings);
-    await this.ensureFolder(DATA_ROOT);
+    await this.ensureFolder(this.getDataRoot());
     await this.ensureFolder(yearPath);
     const exists = await this.app.vault.adapter.exists(reviewPath);
     if (!exists) {
@@ -364,26 +372,26 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
   }
   async exportMonthCsv(month) {
     const summary = await this.getMonthSummary(month);
-    const path = `${EXPORTS_PATH}/${month}_LifeLedger_Records.csv`;
+    const path = `${this.getExportsPath()}/${month}_LifeLedger_Records.csv`;
     await this.writeExportFile(path, formatRecordsCsv(summary.records));
     return path;
   }
   async exportYearCsv(year) {
     const yearlySummary = await this.getYearSummary(year);
-    const path = `${EXPORTS_PATH}/${year}_LifeLedger_Records.csv`;
+    const path = `${this.getExportsPath()}/${year}_LifeLedger_Records.csv`;
     await this.writeExportFile(path, formatRecordsCsv(yearlySummary.records));
     return path;
   }
   async exportAllRecordsJson() {
     const records = await this.loadAllLedgerRecords();
-    const path = `${EXPORTS_PATH}/LifeLedger_All_Records.json`;
+    const path = `${this.getExportsPath()}/LifeLedger_All_Records.json`;
     await this.writeExportFile(path, `${JSON.stringify(records, null, 2)}
 `);
     return path;
   }
   async exportBleedingProjectsJson() {
     const projects = await this.getBleedingProjects();
-    const path = `${EXPORTS_PATH}/LifeLedger_BleedingProjects.json`;
+    const path = `${this.getExportsPath()}/LifeLedger_BleedingProjects.json`;
     await this.writeExportFile(path, `${JSON.stringify(projects, null, 2)}
 `);
     return path;
@@ -396,7 +404,7 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
       scannedFiles: 0,
       ledgerRecords: 0,
       bleedingProjects: 0,
-      reportPath: `${EXPORTS_PATH}/LifeLedger_DataHealthReport.md`
+      reportPath: `${this.getExportsPath()}/LifeLedger_DataHealthReport.md`
     };
     const ledgerIds = /* @__PURE__ */ new Map();
     const bleedingIds = /* @__PURE__ */ new Map();
@@ -412,14 +420,27 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
     return result;
   }
   async ensureFolder(path) {
-    const exists = await this.app.vault.adapter.exists(path);
-    if (!exists) {
-      await this.app.vault.createFolder(path);
+    const normalizedPath = (0, import_obsidian.normalizePath)(path);
+    const parts = normalizedPath.split("/").filter(Boolean);
+    let currentPath = "";
+    for (const part of parts) {
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+      const existing = this.app.vault.getAbstractFileByPath(currentPath);
+      if (existing instanceof import_obsidian.TFolder) {
+        continue;
+      }
+      if (existing) {
+        const message = `LifeLedger cannot create folder because a file already exists at: ${currentPath}`;
+        console.error(message);
+        new import_obsidian.Notice(message);
+        throw new Error(message);
+      }
+      await this.app.vault.createFolder(currentPath);
     }
   }
   async writeExportFile(path, content) {
-    await this.ensureFolder(DATA_ROOT);
-    await this.ensureFolder(EXPORTS_PATH);
+    await this.ensureFolder(this.getDataRoot());
+    await this.ensureFolder(this.getExportsPath());
     const exists = await this.app.vault.adapter.exists(path);
     if (!exists) {
       await this.app.vault.create(path, content);
@@ -434,7 +455,8 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
   }
   async loadAllLedgerRecords() {
     const records = [];
-    const files = this.app.vault.getMarkdownFiles().filter((file) => file.path.startsWith(`${DATA_ROOT}/`));
+    const dataRoots = this.getReadableDataRoots();
+    const files = this.app.vault.getMarkdownFiles().filter((file) => dataRoots.some((root) => file.path.startsWith(`${root}/`)));
     for (const file of files) {
       const content = await this.app.vault.read(file);
       for (const record of parseLedgerRecords(content)) {
@@ -447,7 +469,7 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
     }).map((item) => item.record);
   }
   async scanLedgerFiles(result, seenIds) {
-    const files = this.app.vault.getMarkdownFiles().filter((file) => isLedgerCandidateFile(file.path));
+    const files = this.app.vault.getMarkdownFiles().filter((file) => this.isLedgerCandidateFile(file.path));
     for (const file of files) {
       result.scannedFiles += 1;
       const fileDate = getLedgerDateFromFilePath(file.path);
@@ -549,72 +571,74 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
     }
   }
   async scanBleedingProjects(result, seenIds) {
-    const file = this.app.vault.getFileByPath(BLEEDING_PROJECTS_PATH);
-    if (!file) {
-      result.info.push({ filePath: BLEEDING_PROJECTS_PATH, message: "\u6682\u65E0\u6D41\u8840\u9879\u76EE\u6587\u4EF6\u3002" });
+    const files = await this.getExistingBleedingFiles();
+    if (files.length === 0) {
+      result.info.push({ filePath: this.getBleedingProjectsPath(), message: "\u6682\u65E0\u6D41\u8840\u9879\u76EE\u6587\u4EF6\u3002" });
       return;
     }
-    result.scannedFiles += 1;
-    const content = await this.app.vault.read(file);
-    const block = extractJsonCodeBlock(content, "life-ledger-bleeding");
-    if (block === null) {
-      result.warnings.push({
-        filePath: BLEEDING_PROJECTS_PATH,
-        message: "\u7F3A\u5C11 life-ledger-bleeding \u4EE3\u7801\u5757\u3002"
+    for (const file of files) {
+      result.scannedFiles += 1;
+      const content = await this.app.vault.read(file);
+      const block = extractJsonCodeBlock(content, "life-ledger-bleeding");
+      if (block === null) {
+        result.warnings.push({
+          filePath: file.path,
+          message: "\u7F3A\u5C11 life-ledger-bleeding \u4EE3\u7801\u5757\u3002"
+        });
+        continue;
+      }
+      let parsed;
+      try {
+        parsed = JSON.parse(block.trim());
+      } catch (e) {
+        result.errors.push({
+          filePath: file.path,
+          message: "life-ledger-bleeding JSON \u89E3\u6790\u5931\u8D25\u3002"
+        });
+        continue;
+      }
+      if (!Array.isArray(parsed)) {
+        result.errors.push({
+          filePath: file.path,
+          message: "life-ledger-bleeding \u4EE3\u7801\u5757\u5185\u5BB9\u4E0D\u662F JSON \u6570\u7EC4\u3002"
+        });
+        continue;
+      }
+      parsed.forEach((value, index) => {
+        result.bleedingProjects += 1;
+        this.validateBleedingProject(value, index, result, seenIds, file.path);
       });
-      return;
     }
-    let parsed;
-    try {
-      parsed = JSON.parse(block.trim());
-    } catch (e) {
-      result.errors.push({
-        filePath: BLEEDING_PROJECTS_PATH,
-        message: "life-ledger-bleeding JSON \u89E3\u6790\u5931\u8D25\u3002"
-      });
-      return;
-    }
-    if (!Array.isArray(parsed)) {
-      result.errors.push({
-        filePath: BLEEDING_PROJECTS_PATH,
-        message: "life-ledger-bleeding \u4EE3\u7801\u5757\u5185\u5BB9\u4E0D\u662F JSON \u6570\u7EC4\u3002"
-      });
-      return;
-    }
-    parsed.forEach((value, index) => {
-      result.bleedingProjects += 1;
-      this.validateBleedingProject(value, index, result, seenIds);
-    });
   }
-  validateBleedingProject(value, index, result, seenIds) {
+  validateBleedingProject(value, index, result, seenIds, filePath = this.getBleedingProjectsPath()) {
     const project = value && typeof value === "object" ? value : null;
     const fallbackId = `\u7B2C ${index + 1} \u4E2A\u6D41\u8840\u9879\u76EE`;
     const recordId = typeof (project == null ? void 0 : project.id) === "string" ? project.id : fallbackId;
     if (!project) {
-      result.errors.push({ filePath: BLEEDING_PROJECTS_PATH, recordId, message: "\u6D41\u8840\u9879\u76EE\u4E0D\u662F\u6709\u6548\u5BF9\u8C61\u3002" });
+      result.errors.push({ filePath, recordId, message: "\u6D41\u8840\u9879\u76EE\u4E0D\u662F\u6709\u6548\u5BF9\u8C61\u3002" });
       return;
     }
     if (typeof project.id !== "string" || project.id.length === 0) {
-      result.errors.push({ filePath: BLEEDING_PROJECTS_PATH, recordId, message: "\u6D41\u8840\u9879\u76EE id \u7F3A\u5931\u6216\u4E0D\u662F\u5B57\u7B26\u4E32\u3002" });
+      result.errors.push({ filePath, recordId, message: "\u6D41\u8840\u9879\u76EE id \u7F3A\u5931\u6216\u4E0D\u662F\u5B57\u7B26\u4E32\u3002" });
     } else if (seenIds.has(project.id)) {
-      result.errors.push({ filePath: BLEEDING_PROJECTS_PATH, recordId: project.id, message: "\u6D41\u8840\u9879\u76EE id \u91CD\u590D\u3002" });
+      result.errors.push({ filePath, recordId: project.id, message: "\u6D41\u8840\u9879\u76EE id \u91CD\u590D\u3002" });
     } else {
-      seenIds.set(project.id, { filePath: BLEEDING_PROJECTS_PATH, recordId: project.id, message: "\u6D41\u8840\u9879\u76EE id \u5DF2\u767B\u8BB0\u3002" });
+      seenIds.set(project.id, { filePath, recordId: project.id, message: "\u6D41\u8840\u9879\u76EE id \u5DF2\u767B\u8BB0\u3002" });
     }
     if (typeof project.name !== "string" || project.name.trim().length === 0) {
-      result.errors.push({ filePath: BLEEDING_PROJECTS_PATH, recordId, message: "\u6D41\u8840\u9879\u76EE name \u7F3A\u5931\u6216\u4E3A\u7A7A\u3002" });
+      result.errors.push({ filePath, recordId, message: "\u6D41\u8840\u9879\u76EE name \u7F3A\u5931\u6216\u4E3A\u7A7A\u3002" });
     }
     if (typeof project.amount !== "number" || !Number.isFinite(project.amount) || project.amount <= 0) {
-      result.errors.push({ filePath: BLEEDING_PROJECTS_PATH, recordId, message: "\u6D41\u8840\u9879\u76EE amount \u975E\u6CD5\u3002" });
+      result.errors.push({ filePath, recordId, message: "\u6D41\u8840\u9879\u76EE amount \u975E\u6CD5\u3002" });
     }
     if (typeof project.startDate !== "string" || !isDateString(project.startDate)) {
-      result.errors.push({ filePath: BLEEDING_PROJECTS_PATH, recordId, message: "\u6D41\u8840\u9879\u76EE startDate \u7F3A\u5931\u6216\u683C\u5F0F\u975E\u6CD5\u3002" });
+      result.errors.push({ filePath, recordId, message: "\u6D41\u8840\u9879\u76EE startDate \u7F3A\u5931\u6216\u683C\u5F0F\u975E\u6CD5\u3002" });
     }
     if (typeof project.durationDays !== "number" || !Number.isFinite(project.durationDays) || project.durationDays <= 0) {
-      result.errors.push({ filePath: BLEEDING_PROJECTS_PATH, recordId, message: "\u6D41\u8840\u9879\u76EE durationDays \u975E\u6CD5\u3002" });
+      result.errors.push({ filePath, recordId, message: "\u6D41\u8840\u9879\u76EE durationDays \u975E\u6CD5\u3002" });
     }
     if (typeof project.active !== "boolean") {
-      result.errors.push({ filePath: BLEEDING_PROJECTS_PATH, recordId, message: "\u6D41\u8840\u9879\u76EE active \u4E0D\u662F boolean\u3002" });
+      result.errors.push({ filePath, recordId, message: "\u6D41\u8840\u9879\u76EE active \u4E0D\u662F boolean\u3002" });
     }
   }
   async loadMonthRecords(month) {
@@ -641,13 +665,13 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
     return records;
   }
   getOldDailyPath(date) {
-    return `${DATA_ROOT}/${date.slice(0, 7)}/${date}.md`;
+    return `${LEGACY_DATA_ROOT}/${date.slice(0, 7)}/${date}.md`;
   }
-  getYearPath(date) {
-    return `${DATA_ROOT}/${date.slice(0, 4)}_LifeLedger`;
+  getYearPath(date, root = this.getDataRoot()) {
+    return `${root}/${date.slice(0, 4)}_LifeLedger`;
   }
-  getMonthPath(date) {
-    return `${this.getYearPath(date)}/${date.slice(0, 7)}`;
+  getMonthPath(date, root = this.getDataRoot()) {
+    return `${this.getYearPath(date, root)}/${date.slice(0, 7)}`;
   }
   getNewDailyPath(date) {
     return `${this.getMonthPath(date)}/${date}_LL.md`;
@@ -659,14 +683,16 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
     return `${this.getYearPath(`${year}-01-01`)}/${year}_YearlyReview_LL.md`;
   }
   async listMonthLedgerFiles(date) {
-    const newMonthPath = this.getMonthPath(date);
-    const oldMonthPath = `${DATA_ROOT}/${date.slice(0, 7)}`;
+    const oldMonthPath = `${LEGACY_DATA_ROOT}/${date.slice(0, 7)}`;
     const paths = /* @__PURE__ */ new Set();
-    if (await this.app.vault.adapter.exists(newMonthPath)) {
-      const listed = await this.app.vault.adapter.list(newMonthPath);
-      for (const path of listed.files) {
-        if (path.endsWith("_LL.md")) {
-          paths.add(path);
+    for (const root of this.getReadableDataRoots()) {
+      const monthPath = this.getMonthPath(date, root);
+      if (await this.app.vault.adapter.exists(monthPath)) {
+        const listed = await this.app.vault.adapter.list(monthPath);
+        for (const path of listed.files) {
+          if (path.endsWith("_LL.md")) {
+            paths.add(path);
+          }
         }
       }
     }
@@ -680,8 +706,33 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
     }
     return Array.from(paths);
   }
+  getDataRoot() {
+    return normalizeDataRoot(this.settings.dataRoot);
+  }
+  getReadableDataRoots() {
+    return Array.from(/* @__PURE__ */ new Set([this.getDataRoot(), LEGACY_DATA_ROOT]));
+  }
+  getBleedingProjectsPath(root = this.getDataRoot()) {
+    return (0, import_obsidian.normalizePath)(`${root}/BleedingProjects.md`);
+  }
+  getExportsPath(root = this.getDataRoot()) {
+    return (0, import_obsidian.normalizePath)(`${root}/Exports`);
+  }
+  isLedgerCandidateFile(path) {
+    for (const root of this.getReadableDataRoots()) {
+      if (!isLedgerCandidateFile(path, root, this.getExportsPath(root), this.getBleedingProjectsPath(root))) {
+        continue;
+      }
+      return true;
+    }
+    return false;
+  }
   async findDailyFileForRecord(record) {
-    for (const path of [this.getNewDailyPath(record.date), this.getOldDailyPath(record.date)]) {
+    const paths = [
+      ...this.getReadableDataRoots().map((root) => `${this.getMonthPath(record.date, root)}/${record.date}_LL.md`),
+      this.getOldDailyPath(record.date)
+    ];
+    for (const path of Array.from(new Set(paths))) {
       const file = this.app.vault.getFileByPath(path);
       if (!file) continue;
       const content = await this.app.vault.read(file);
@@ -701,20 +752,43 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
       content: await this.app.vault.read(file)
     };
   }
-  async readBleedingFile() {
-    await this.ensureFolder(DATA_ROOT);
-    const exists = await this.app.vault.adapter.exists(BLEEDING_PROJECTS_PATH);
-    if (!exists) {
-      await this.app.vault.create(BLEEDING_PROJECTS_PATH, this.formatBleedingFile([]));
+  async readBleedingFiles() {
+    const files = await this.getExistingBleedingFiles();
+    if (files.length === 0) {
+      const bleedingProjectsPath = this.getBleedingProjectsPath();
+      await this.ensureFolder(this.getDataRoot());
+      await this.app.vault.create(bleedingProjectsPath, this.formatBleedingFile([]));
+      const file = this.app.vault.getFileByPath(bleedingProjectsPath);
+      if (!file) {
+        throw new Error(`\u65E0\u6CD5\u8BFB\u53D6\u6587\u4EF6\uFF1A${bleedingProjectsPath}`);
+      }
+      return [{ file, content: await this.app.vault.read(file) }];
     }
-    const file = this.app.vault.getFileByPath(BLEEDING_PROJECTS_PATH);
-    if (!file) {
-      throw new Error(`\u65E0\u6CD5\u8BFB\u53D6\u6587\u4EF6\uFF1A${BLEEDING_PROJECTS_PATH}`);
+    const results = [];
+    for (const file of files) {
+      results.push({ file, content: await this.app.vault.read(file) });
     }
-    return {
-      file,
-      content: await this.app.vault.read(file)
-    };
+    return results;
+  }
+  async findBleedingFileForProject(projectId) {
+    const files = await this.readBleedingFiles();
+    for (const item of files) {
+      if (parseBleedingProjects(item.content).some((project) => project.id === projectId)) {
+        return item;
+      }
+    }
+    throw new Error(`\u672A\u627E\u5230\u6D41\u8840\u9879\u76EE\uFF1A${projectId}`);
+  }
+  async getExistingBleedingFiles() {
+    const files = [];
+    const paths = this.getReadableDataRoots().map((root) => this.getBleedingProjectsPath(root));
+    for (const path of Array.from(new Set(paths))) {
+      const file = this.app.vault.getFileByPath(path);
+      if (file) {
+        files.push(file);
+      }
+    }
+    return files;
   }
   prepareRecordForSave(record) {
     const next = {
@@ -798,6 +872,12 @@ var LifeLedgerSettingTab = class extends import_obsidian.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: "LifeLedger \u8BBE\u7F6E" });
+    new import_obsidian.Setting(containerEl).setName("\u6570\u636E\u6839\u76EE\u5F55").setDesc("LifeLedger \u6570\u636E\u4FDD\u5B58\u4F4D\u7F6E\uFF0C\u53EF\u586B\u5199\u5D4C\u5957\u8DEF\u5F84\uFF0C\u4F8B\u5982 \u5E06OS/LifeLedger\u3002").addText((text) => {
+      text.setPlaceholder(DEFAULT_DATA_ROOT).setValue(this.plugin.settings.dataRoot).onChange(async (value) => {
+        this.plugin.settings.dataRoot = normalizeDataRoot(value);
+        await this.plugin.saveSettings(false);
+      });
+    });
     new import_obsidian.Setting(containerEl).setName("\u7CFB\u7EDF\u8D77\u59CB\u6708\u4EFD").setDesc("\u7528\u4E8E\u8DE8\u6708\u7D2F\u8BA1\u4F59\u989D\uFF0C\u683C\u5F0F\u4E3A YYYY-MM\u3002\u8D77\u59CB\u6708\u4EFD\u4E4B\u524D\u7684\u94B1\u5305\u4F59\u989D\u663E\u793A\u4E3A 0\u3002").addText((text) => {
       text.setPlaceholder(getCurrentMonthString()).setValue(this.plugin.settings.systemStartMonth).onChange(async (value) => {
         const month = value.trim();
@@ -924,7 +1004,7 @@ var LifeLedgerDashboardView = class extends import_obsidian.ItemView {
     return "LifeLedger Dashboard";
   }
   getIcon() {
-    return "wallet-cards";
+    return "book-open-check";
   }
   async onOpen() {
     await this.render();
@@ -2608,13 +2688,21 @@ function parseOptionalAmount(value) {
   const amount = Number(trimmed);
   return Number.isFinite(amount) ? Math.abs(amount) : null;
 }
-function isLedgerCandidateFile(path) {
-  if (!path.startsWith(`${DATA_ROOT}/`)) return false;
-  if (path.startsWith(`${EXPORTS_PATH}/`)) return false;
-  if (path === BLEEDING_PROJECTS_PATH) return false;
+function normalizeDataRoot(value) {
+  const normalized = (0, import_obsidian.normalizePath)(typeof value === "string" ? value.trim() : DEFAULT_DATA_ROOT).replace(/^\/+/, "").replace(/\/+$/, "");
+  return normalized || DEFAULT_DATA_ROOT;
+}
+function isLedgerCandidateFile(path, dataRoot, exportsPath, bleedingProjectsPath) {
+  if (!path.startsWith(`${dataRoot}/`)) return false;
+  if (path.startsWith(`${exportsPath}/`)) return false;
+  if (path === bleedingProjectsPath) return false;
   if (!path.endsWith(".md")) return false;
   if (path.includes("_MonthlyReview_") || path.includes("_YearlyReview_")) return false;
-  return /^LifeLedger\/\d{4}_LifeLedger\/\d{4}-\d{2}\/[^/]+\.md$/.test(path) || /^LifeLedger\/\d{4}-\d{2}\/[^/]+\.md$/.test(path);
+  const escapedRoot = escapeRegExp(dataRoot);
+  return new RegExp(`^${escapedRoot}/\\d{4}_LifeLedger/\\d{4}-\\d{2}/[^/]+\\.md$`).test(path) || new RegExp(`^${escapedRoot}/\\d{4}-\\d{2}/[^/]+\\.md$`).test(path);
+}
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 function isStandardLedgerFileName(path) {
   const fileName = path.split("/").pop() || "";

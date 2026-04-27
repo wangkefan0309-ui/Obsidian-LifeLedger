@@ -1,9 +1,8 @@
-import { App, ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, WorkspaceLeaf } from "obsidian";
+import { App, ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder, WorkspaceLeaf, normalizePath } from "obsidian";
 
 const VIEW_TYPE_LIFE_LEDGER = "life-ledger-dashboard";
-const DATA_ROOT = "LifeLedger";
-const BLEEDING_PROJECTS_PATH = `${DATA_ROOT}/BleedingProjects.md`;
-const EXPORTS_PATH = `${DATA_ROOT}/Exports`;
+const DEFAULT_DATA_ROOT = "LifeLedger";
+const LEGACY_DATA_ROOT = "LifeLedger";
 const DEFAULT_NORMAL_CATEGORIES = ["饮食", "交通", "购物", "学习", "娱乐", "生活费", "创业", "其他"];
 const DEFAULT_ASSET_CATEGORIES = [
   "银行卡储蓄",
@@ -46,6 +45,7 @@ const DEFAULT_SECTION_COLLAPSE_STATE: Record<SectionKey, boolean> = {
 };
 
 interface LifeLedgerSettings {
+  dataRoot: string;
   systemStartMonth: string;
   activityWalletInitialAmount: number;
   reserveWalletInitialAmount: number;
@@ -163,6 +163,7 @@ interface HealthCheckResult {
 }
 
 const DEFAULT_SETTINGS: LifeLedgerSettings = {
+  dataRoot: DEFAULT_DATA_ROOT,
   systemStartMonth: getCurrentMonthString(),
   activityWalletInitialAmount: 1500,
   reserveWalletInitialAmount: 0,
@@ -223,6 +224,7 @@ export default class LifeLedgerPlugin extends Plugin {
     this.settings = {
       ...DEFAULT_SETTINGS,
       ...loaded,
+      dataRoot: normalizeDataRoot(loaded?.dataRoot),
       systemStartMonth,
       normalCategories: normalizeCategoryList(
         loaded?.normalCategories,
@@ -243,9 +245,11 @@ export default class LifeLedgerPlugin extends Plugin {
     }
   }
 
-  async saveSettings(): Promise<void> {
+  async saveSettings(refreshDashboard = true): Promise<void> {
     await this.saveData(this.settings);
-    await this.refreshDashboardViews();
+    if (refreshDashboard) {
+      await this.refreshDashboardViews();
+    }
   }
 
   async saveSectionCollapseState(): Promise<void> {
@@ -278,7 +282,7 @@ export default class LifeLedgerPlugin extends Plugin {
     }));
     await this.learnCategories(recordsToAdd);
 
-    await this.ensureFolder(DATA_ROOT);
+    await this.ensureFolder(this.getDataRoot());
     await this.ensureFolder(yearPath);
     await this.ensureFolder(monthPath);
 
@@ -326,7 +330,8 @@ export default class LifeLedgerPlugin extends Plugin {
   }
 
   async saveBleedingProject(input: Omit<BleedingProject, "id" | "active">): Promise<void> {
-    await this.ensureFolder(DATA_ROOT);
+    const bleedingProjectsPath = this.getBleedingProjectsPath();
+    await this.ensureFolder(this.getDataRoot());
     const project: BleedingProject = {
       ...input,
       amount: roundMoney(input.amount),
@@ -334,16 +339,16 @@ export default class LifeLedgerPlugin extends Plugin {
       id: createRecordId(),
       active: true
     };
-    const exists = await this.app.vault.adapter.exists(BLEEDING_PROJECTS_PATH);
+    const exists = await this.app.vault.adapter.exists(bleedingProjectsPath);
 
     if (!exists) {
-      await this.app.vault.create(BLEEDING_PROJECTS_PATH, this.formatBleedingFile([project]));
+      await this.app.vault.create(bleedingProjectsPath, this.formatBleedingFile([project]));
       return;
     }
 
-    const file = this.app.vault.getFileByPath(BLEEDING_PROJECTS_PATH);
+    const file = this.app.vault.getFileByPath(bleedingProjectsPath);
     if (!file) {
-      throw new Error(`无法读取文件：${BLEEDING_PROJECTS_PATH}`);
+      throw new Error(`无法读取文件：${bleedingProjectsPath}`);
     }
 
     const content = await this.app.vault.read(file);
@@ -353,7 +358,7 @@ export default class LifeLedgerPlugin extends Plugin {
   }
 
   async updateBleedingProject(project: BleedingProject): Promise<void> {
-    const { file, content } = await this.readBleedingFile();
+    const { file, content } = await this.findBleedingFileForProject(project.id);
     const projects = parseBleedingProjects(content);
     const index = projects.findIndex((item) => item.id === project.id);
 
@@ -370,7 +375,7 @@ export default class LifeLedgerPlugin extends Plugin {
   }
 
   async deleteBleedingProject(projectId: string): Promise<void> {
-    const { file, content } = await this.readBleedingFile();
+    const { file, content } = await this.findBleedingFileForProject(projectId);
     const projects = parseBleedingProjects(content);
     const nextProjects = projects.filter((project) => project.id !== projectId);
 
@@ -382,7 +387,7 @@ export default class LifeLedgerPlugin extends Plugin {
   }
 
   async toggleBleedingProject(projectId: string): Promise<void> {
-    const { file, content } = await this.readBleedingFile();
+    const { file, content } = await this.findBleedingFileForProject(projectId);
     const projects = parseBleedingProjects(content);
     const project = projects.find((item) => item.id === projectId);
 
@@ -395,13 +400,19 @@ export default class LifeLedgerPlugin extends Plugin {
   }
 
   async getBleedingProjects(): Promise<BleedingProject[]> {
-    const { file, content } = await this.readBleedingFile();
-    if (!/```life-ledger-bleeding\s*([\s\S]*?)```/.test(content)) {
-      await this.app.vault.modify(file, this.replaceBleedingBlock(content, []));
-      return [];
+    const files = await this.readBleedingFiles();
+    const projects: BleedingProject[] = [];
+
+    for (const { file, content } of files) {
+      if (!/```life-ledger-bleeding\s*([\s\S]*?)```/.test(content)) {
+        await this.app.vault.modify(file, this.replaceBleedingBlock(content, []));
+        continue;
+      }
+
+      projects.push(...parseBleedingProjects(content));
     }
 
-    return parseBleedingProjects(content);
+    return projects;
   }
 
   async getMonthSummary(month: string): Promise<MonthSummary> {
@@ -460,7 +471,7 @@ export default class LifeLedgerPlugin extends Plugin {
     const reviewPath = this.getMonthlyReviewPath(month);
     const content = formatMonthlyReview(month, summary, this.settings);
 
-    await this.ensureFolder(DATA_ROOT);
+    await this.ensureFolder(this.getDataRoot());
     await this.ensureFolder(yearPath);
     await this.ensureFolder(monthPath);
 
@@ -486,7 +497,7 @@ export default class LifeLedgerPlugin extends Plugin {
     const reviewPath = this.getYearlyReviewPath(year);
     const content = formatYearlyReview(year, yearlySummary, monthSummary, this.settings);
 
-    await this.ensureFolder(DATA_ROOT);
+    await this.ensureFolder(this.getDataRoot());
     await this.ensureFolder(yearPath);
 
     const exists = await this.app.vault.adapter.exists(reviewPath);
@@ -546,28 +557,28 @@ export default class LifeLedgerPlugin extends Plugin {
 
   async exportMonthCsv(month: string): Promise<string> {
     const summary = await this.getMonthSummary(month);
-    const path = `${EXPORTS_PATH}/${month}_LifeLedger_Records.csv`;
+    const path = `${this.getExportsPath()}/${month}_LifeLedger_Records.csv`;
     await this.writeExportFile(path, formatRecordsCsv(summary.records));
     return path;
   }
 
   async exportYearCsv(year: string): Promise<string> {
     const yearlySummary = await this.getYearSummary(year);
-    const path = `${EXPORTS_PATH}/${year}_LifeLedger_Records.csv`;
+    const path = `${this.getExportsPath()}/${year}_LifeLedger_Records.csv`;
     await this.writeExportFile(path, formatRecordsCsv(yearlySummary.records));
     return path;
   }
 
   async exportAllRecordsJson(): Promise<string> {
     const records = await this.loadAllLedgerRecords();
-    const path = `${EXPORTS_PATH}/LifeLedger_All_Records.json`;
+    const path = `${this.getExportsPath()}/LifeLedger_All_Records.json`;
     await this.writeExportFile(path, `${JSON.stringify(records, null, 2)}\n`);
     return path;
   }
 
   async exportBleedingProjectsJson(): Promise<string> {
     const projects = await this.getBleedingProjects();
-    const path = `${EXPORTS_PATH}/LifeLedger_BleedingProjects.json`;
+    const path = `${this.getExportsPath()}/LifeLedger_BleedingProjects.json`;
     await this.writeExportFile(path, `${JSON.stringify(projects, null, 2)}\n`);
     return path;
   }
@@ -580,7 +591,7 @@ export default class LifeLedgerPlugin extends Plugin {
       scannedFiles: 0,
       ledgerRecords: 0,
       bleedingProjects: 0,
-      reportPath: `${EXPORTS_PATH}/LifeLedger_DataHealthReport.md`
+      reportPath: `${this.getExportsPath()}/LifeLedger_DataHealthReport.md`
     };
     const ledgerIds = new Map<string, HealthIssue>();
     const bleedingIds = new Map<string, HealthIssue>();
@@ -603,15 +614,32 @@ export default class LifeLedgerPlugin extends Plugin {
   }
 
   private async ensureFolder(path: string): Promise<void> {
-    const exists = await this.app.vault.adapter.exists(path);
-    if (!exists) {
-      await this.app.vault.createFolder(path);
+    const normalizedPath = normalizePath(path);
+    const parts = normalizedPath.split("/").filter(Boolean);
+    let currentPath = "";
+
+    for (const part of parts) {
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+
+      const existing = this.app.vault.getAbstractFileByPath(currentPath);
+      if (existing instanceof TFolder) {
+        continue;
+      }
+
+      if (existing) {
+        const message = `LifeLedger cannot create folder because a file already exists at: ${currentPath}`;
+        console.error(message);
+        new Notice(message);
+        throw new Error(message);
+      }
+
+      await this.app.vault.createFolder(currentPath);
     }
   }
 
   private async writeExportFile(path: string, content: string): Promise<void> {
-    await this.ensureFolder(DATA_ROOT);
-    await this.ensureFolder(EXPORTS_PATH);
+    await this.ensureFolder(this.getDataRoot());
+    await this.ensureFolder(this.getExportsPath());
 
     const exists = await this.app.vault.adapter.exists(path);
     if (!exists) {
@@ -630,9 +658,10 @@ export default class LifeLedgerPlugin extends Plugin {
 
   private async loadAllLedgerRecords(): Promise<LedgerRecord[]> {
     const records: Array<{ record: LedgerRecord; index: number }> = [];
+    const dataRoots = this.getReadableDataRoots();
     const files = this.app.vault
       .getMarkdownFiles()
-      .filter((file) => file.path.startsWith(`${DATA_ROOT}/`));
+      .filter((file) => dataRoots.some((root) => file.path.startsWith(`${root}/`)));
 
     for (const file of files) {
       const content = await this.app.vault.read(file);
@@ -655,7 +684,7 @@ export default class LifeLedgerPlugin extends Plugin {
   ): Promise<void> {
     const files = this.app.vault
       .getMarkdownFiles()
-      .filter((file) => isLedgerCandidateFile(file.path));
+      .filter((file) => this.isLedgerCandidateFile(file.path));
 
     for (const file of files) {
       result.scannedFiles += 1;
@@ -785,89 +814,92 @@ export default class LifeLedgerPlugin extends Plugin {
     result: HealthCheckResult,
     seenIds: Map<string, HealthIssue>
   ): Promise<void> {
-    const file = this.app.vault.getFileByPath(BLEEDING_PROJECTS_PATH);
-    if (!file) {
-      result.info.push({ filePath: BLEEDING_PROJECTS_PATH, message: "暂无流血项目文件。" });
+    const files = await this.getExistingBleedingFiles();
+    if (files.length === 0) {
+      result.info.push({ filePath: this.getBleedingProjectsPath(), message: "暂无流血项目文件。" });
       return;
     }
 
-    result.scannedFiles += 1;
-    const content = await this.app.vault.read(file);
-    const block = extractJsonCodeBlock(content, "life-ledger-bleeding");
-    if (block === null) {
-      result.warnings.push({
-        filePath: BLEEDING_PROJECTS_PATH,
-        message: "缺少 life-ledger-bleeding 代码块。"
+    for (const file of files) {
+      result.scannedFiles += 1;
+      const content = await this.app.vault.read(file);
+      const block = extractJsonCodeBlock(content, "life-ledger-bleeding");
+      if (block === null) {
+        result.warnings.push({
+          filePath: file.path,
+          message: "缺少 life-ledger-bleeding 代码块。"
+        });
+        continue;
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(block.trim());
+      } catch {
+        result.errors.push({
+          filePath: file.path,
+          message: "life-ledger-bleeding JSON 解析失败。"
+        });
+        continue;
+      }
+
+      if (!Array.isArray(parsed)) {
+        result.errors.push({
+          filePath: file.path,
+          message: "life-ledger-bleeding 代码块内容不是 JSON 数组。"
+        });
+        continue;
+      }
+
+      parsed.forEach((value, index) => {
+        result.bleedingProjects += 1;
+        this.validateBleedingProject(value, index, result, seenIds, file.path);
       });
-      return;
     }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(block.trim());
-    } catch {
-      result.errors.push({
-        filePath: BLEEDING_PROJECTS_PATH,
-        message: "life-ledger-bleeding JSON 解析失败。"
-      });
-      return;
-    }
-
-    if (!Array.isArray(parsed)) {
-      result.errors.push({
-        filePath: BLEEDING_PROJECTS_PATH,
-        message: "life-ledger-bleeding 代码块内容不是 JSON 数组。"
-      });
-      return;
-    }
-
-    parsed.forEach((value, index) => {
-      result.bleedingProjects += 1;
-      this.validateBleedingProject(value, index, result, seenIds);
-    });
   }
 
   private validateBleedingProject(
     value: unknown,
     index: number,
     result: HealthCheckResult,
-    seenIds: Map<string, HealthIssue>
+    seenIds: Map<string, HealthIssue>,
+    filePath = this.getBleedingProjectsPath()
   ): void {
     const project = value && typeof value === "object" ? value as Record<string, unknown> : null;
     const fallbackId = `第 ${index + 1} 个流血项目`;
     const recordId = typeof project?.id === "string" ? project.id : fallbackId;
 
     if (!project) {
-      result.errors.push({ filePath: BLEEDING_PROJECTS_PATH, recordId, message: "流血项目不是有效对象。" });
+      result.errors.push({ filePath, recordId, message: "流血项目不是有效对象。" });
       return;
     }
 
     if (typeof project.id !== "string" || project.id.length === 0) {
-      result.errors.push({ filePath: BLEEDING_PROJECTS_PATH, recordId, message: "流血项目 id 缺失或不是字符串。" });
+      result.errors.push({ filePath, recordId, message: "流血项目 id 缺失或不是字符串。" });
     } else if (seenIds.has(project.id)) {
-      result.errors.push({ filePath: BLEEDING_PROJECTS_PATH, recordId: project.id, message: "流血项目 id 重复。" });
+      result.errors.push({ filePath, recordId: project.id, message: "流血项目 id 重复。" });
     } else {
-      seenIds.set(project.id, { filePath: BLEEDING_PROJECTS_PATH, recordId: project.id, message: "流血项目 id 已登记。" });
+      seenIds.set(project.id, { filePath, recordId: project.id, message: "流血项目 id 已登记。" });
     }
 
     if (typeof project.name !== "string" || project.name.trim().length === 0) {
-      result.errors.push({ filePath: BLEEDING_PROJECTS_PATH, recordId, message: "流血项目 name 缺失或为空。" });
+      result.errors.push({ filePath, recordId, message: "流血项目 name 缺失或为空。" });
     }
 
     if (typeof project.amount !== "number" || !Number.isFinite(project.amount) || project.amount <= 0) {
-      result.errors.push({ filePath: BLEEDING_PROJECTS_PATH, recordId, message: "流血项目 amount 非法。" });
+      result.errors.push({ filePath, recordId, message: "流血项目 amount 非法。" });
     }
 
     if (typeof project.startDate !== "string" || !isDateString(project.startDate)) {
-      result.errors.push({ filePath: BLEEDING_PROJECTS_PATH, recordId, message: "流血项目 startDate 缺失或格式非法。" });
+      result.errors.push({ filePath, recordId, message: "流血项目 startDate 缺失或格式非法。" });
     }
 
     if (typeof project.durationDays !== "number" || !Number.isFinite(project.durationDays) || project.durationDays <= 0) {
-      result.errors.push({ filePath: BLEEDING_PROJECTS_PATH, recordId, message: "流血项目 durationDays 非法。" });
+      result.errors.push({ filePath, recordId, message: "流血项目 durationDays 非法。" });
     }
 
     if (typeof project.active !== "boolean") {
-      result.errors.push({ filePath: BLEEDING_PROJECTS_PATH, recordId, message: "流血项目 active 不是 boolean。" });
+      result.errors.push({ filePath, recordId, message: "流血项目 active 不是 boolean。" });
     }
   }
 
@@ -906,15 +938,15 @@ export default class LifeLedgerPlugin extends Plugin {
   }
 
   private getOldDailyPath(date: string): string {
-    return `${DATA_ROOT}/${date.slice(0, 7)}/${date}.md`;
+    return `${LEGACY_DATA_ROOT}/${date.slice(0, 7)}/${date}.md`;
   }
 
-  private getYearPath(date: string): string {
-    return `${DATA_ROOT}/${date.slice(0, 4)}_LifeLedger`;
+  private getYearPath(date: string, root = this.getDataRoot()): string {
+    return `${root}/${date.slice(0, 4)}_LifeLedger`;
   }
 
-  private getMonthPath(date: string): string {
-    return `${this.getYearPath(date)}/${date.slice(0, 7)}`;
+  private getMonthPath(date: string, root = this.getDataRoot()): string {
+    return `${this.getYearPath(date, root)}/${date.slice(0, 7)}`;
   }
 
   private getNewDailyPath(date: string): string {
@@ -930,15 +962,17 @@ export default class LifeLedgerPlugin extends Plugin {
   }
 
   private async listMonthLedgerFiles(date: string): Promise<string[]> {
-    const newMonthPath = this.getMonthPath(date);
-    const oldMonthPath = `${DATA_ROOT}/${date.slice(0, 7)}`;
+    const oldMonthPath = `${LEGACY_DATA_ROOT}/${date.slice(0, 7)}`;
     const paths = new Set<string>();
 
-    if (await this.app.vault.adapter.exists(newMonthPath)) {
-      const listed = await this.app.vault.adapter.list(newMonthPath);
-      for (const path of listed.files) {
-        if (path.endsWith("_LL.md")) {
-          paths.add(path);
+    for (const root of this.getReadableDataRoots()) {
+      const monthPath = this.getMonthPath(date, root);
+      if (await this.app.vault.adapter.exists(monthPath)) {
+        const listed = await this.app.vault.adapter.list(monthPath);
+        for (const path of listed.files) {
+          if (path.endsWith("_LL.md")) {
+            paths.add(path);
+          }
         }
       }
     }
@@ -955,8 +989,41 @@ export default class LifeLedgerPlugin extends Plugin {
     return Array.from(paths);
   }
 
+  private getDataRoot(): string {
+    return normalizeDataRoot(this.settings.dataRoot);
+  }
+
+  private getReadableDataRoots(): string[] {
+    return Array.from(new Set([this.getDataRoot(), LEGACY_DATA_ROOT]));
+  }
+
+  private getBleedingProjectsPath(root = this.getDataRoot()): string {
+    return normalizePath(`${root}/BleedingProjects.md`);
+  }
+
+  private getExportsPath(root = this.getDataRoot()): string {
+    return normalizePath(`${root}/Exports`);
+  }
+
+  private isLedgerCandidateFile(path: string): boolean {
+    for (const root of this.getReadableDataRoots()) {
+      if (!isLedgerCandidateFile(path, root, this.getExportsPath(root), this.getBleedingProjectsPath(root))) {
+        continue;
+      }
+
+      return true;
+    }
+
+    return false;
+  }
+
   private async findDailyFileForRecord(record: LedgerRecord) {
-    for (const path of [this.getNewDailyPath(record.date), this.getOldDailyPath(record.date)]) {
+    const paths = [
+      ...this.getReadableDataRoots().map((root) => `${this.getMonthPath(record.date, root)}/${record.date}_LL.md`),
+      this.getOldDailyPath(record.date)
+    ];
+
+    for (const path of Array.from(new Set(paths))) {
       const file = this.app.vault.getFileByPath(path);
       if (!file) continue;
 
@@ -981,23 +1048,49 @@ export default class LifeLedgerPlugin extends Plugin {
     };
   }
 
-  private async readBleedingFile(): Promise<{ file: TFile; content: string }> {
-    await this.ensureFolder(DATA_ROOT);
-    const exists = await this.app.vault.adapter.exists(BLEEDING_PROJECTS_PATH);
-
-    if (!exists) {
-      await this.app.vault.create(BLEEDING_PROJECTS_PATH, this.formatBleedingFile([]));
+  private async readBleedingFiles(): Promise<Array<{ file: TFile; content: string }>> {
+    const files = await this.getExistingBleedingFiles();
+    if (files.length === 0) {
+      const bleedingProjectsPath = this.getBleedingProjectsPath();
+      await this.ensureFolder(this.getDataRoot());
+      await this.app.vault.create(bleedingProjectsPath, this.formatBleedingFile([]));
+      const file = this.app.vault.getFileByPath(bleedingProjectsPath);
+      if (!file) {
+        throw new Error(`无法读取文件：${bleedingProjectsPath}`);
+      }
+      return [{ file, content: await this.app.vault.read(file) }];
     }
 
-    const file = this.app.vault.getFileByPath(BLEEDING_PROJECTS_PATH);
-    if (!file) {
-      throw new Error(`无法读取文件：${BLEEDING_PROJECTS_PATH}`);
+    const results: Array<{ file: TFile; content: string }> = [];
+    for (const file of files) {
+      results.push({ file, content: await this.app.vault.read(file) });
+    }
+    return results;
+  }
+
+  private async findBleedingFileForProject(projectId: string): Promise<{ file: TFile; content: string }> {
+    const files = await this.readBleedingFiles();
+    for (const item of files) {
+      if (parseBleedingProjects(item.content).some((project) => project.id === projectId)) {
+        return item;
+      }
     }
 
-    return {
-      file,
-      content: await this.app.vault.read(file)
-    };
+    throw new Error(`未找到流血项目：${projectId}`);
+  }
+
+  private async getExistingBleedingFiles(): Promise<TFile[]> {
+    const files: TFile[] = [];
+    const paths = this.getReadableDataRoots().map((root) => this.getBleedingProjectsPath(root));
+
+    for (const path of Array.from(new Set(paths))) {
+      const file = this.app.vault.getFileByPath(path);
+      if (file) {
+        files.push(file);
+      }
+    }
+
+    return files;
   }
 
   private prepareRecordForSave<T extends Omit<LedgerRecord, "id" | "date"> | LedgerRecord>(
@@ -1082,6 +1175,19 @@ class LifeLedgerSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     containerEl.createEl("h2", { text: "LifeLedger 设置" });
+
+    new Setting(containerEl)
+      .setName("数据根目录")
+      .setDesc("LifeLedger 数据保存位置，可填写嵌套路径，例如 帆OS/LifeLedger。")
+      .addText((text) => {
+        text
+          .setPlaceholder(DEFAULT_DATA_ROOT)
+          .setValue(this.plugin.settings.dataRoot)
+          .onChange(async (value) => {
+            this.plugin.settings.dataRoot = normalizeDataRoot(value);
+            await this.plugin.saveSettings(false);
+          });
+      });
 
     new Setting(containerEl)
       .setName("系统起始月份")
@@ -1292,7 +1398,7 @@ class LifeLedgerDashboardView extends ItemView {
   }
 
   getIcon(): string {
-    return "wallet-cards";
+    return "book-open-check";
   }
 
   async onOpen(): Promise<void> {
@@ -3394,17 +3500,34 @@ function parseOptionalAmount(value: string): number | null {
   return Number.isFinite(amount) ? Math.abs(amount) : null;
 }
 
-function isLedgerCandidateFile(path: string): boolean {
-  if (!path.startsWith(`${DATA_ROOT}/`)) return false;
-  if (path.startsWith(`${EXPORTS_PATH}/`)) return false;
-  if (path === BLEEDING_PROJECTS_PATH) return false;
+function normalizeDataRoot(value: unknown): string {
+  const normalized = normalizePath(typeof value === "string" ? value.trim() : DEFAULT_DATA_ROOT)
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
+  return normalized || DEFAULT_DATA_ROOT;
+}
+
+function isLedgerCandidateFile(
+  path: string,
+  dataRoot: string,
+  exportsPath: string,
+  bleedingProjectsPath: string
+): boolean {
+  if (!path.startsWith(`${dataRoot}/`)) return false;
+  if (path.startsWith(`${exportsPath}/`)) return false;
+  if (path === bleedingProjectsPath) return false;
   if (!path.endsWith(".md")) return false;
   if (path.includes("_MonthlyReview_") || path.includes("_YearlyReview_")) return false;
 
+  const escapedRoot = escapeRegExp(dataRoot);
   return (
-    /^LifeLedger\/\d{4}_LifeLedger\/\d{4}-\d{2}\/[^/]+\.md$/.test(path) ||
-    /^LifeLedger\/\d{4}-\d{2}\/[^/]+\.md$/.test(path)
+    new RegExp(`^${escapedRoot}/\\d{4}_LifeLedger/\\d{4}-\\d{2}/[^/]+\\.md$`).test(path) ||
+    new RegExp(`^${escapedRoot}/\\d{4}-\\d{2}/[^/]+\\.md$`).test(path)
   );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function isStandardLedgerFileName(path: string): boolean {
