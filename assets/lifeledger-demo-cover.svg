@@ -1,0 +1,20 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1280" height="720" fill="#1f2024"/>
+  <rect x="122" y="88" width="1036" height="544" rx="18" fill="#232429" stroke="#373941"/>
+  <text x="182" y="162" fill="#f1f3f7" font-family="Arial, sans-serif" font-size="42" font-weight="700">LifeLedger 人生账本</text>
+  <text x="182" y="226" fill="#d9dde6" font-family="Arial, sans-serif" font-size="26" font-weight="700">Obsidian personal finance dashboard</text>
+  <line x1="182" y1="272" x2="1098" y2="272" stroke="#3a3c45"/>
+  <text x="182" y="330" fill="#f1f3f7" font-family="Arial, sans-serif" font-size="26" font-weight="700">本月数据仪表盘</text>
+  <rect x="182" y="364" width="260" height="112" rx="10" fill="#2b2d34" stroke="#454854"/>
+  <text x="210" y="412" fill="#aeb5c4" font-family="Arial, sans-serif" font-size="20">月收入</text>
+  <text x="210" y="454" fill="#77d19a" font-family="Arial, sans-serif" font-size="32" font-weight="700">+8,500.00</text>
+  <rect x="472" y="364" width="260" height="112" rx="10" fill="#2b2d34" stroke="#454854"/>
+  <text x="500" y="412" fill="#aeb5c4" font-family="Arial, sans-serif" font-size="20">月支出</text>
+  <text x="500" y="454" fill="#ff8d8d" font-family="Arial, sans-serif" font-size="32" font-weight="700">-3,260.00</text>
+  <rect x="762" y="364" width="260" height="112" rx="10" fill="#2b2d34" stroke="#454854"/>
+  <text x="790" y="412" fill="#aeb5c4" font-family="Arial, sans-serif" font-size="20">活动钱包余额</text>
+  <text x="790" y="454" fill="#f1f3f7" font-family="Arial, sans-serif" font-size="32" font-weight="700">5,240.00</text>
+  <circle cx="640" cy="552" r="58" fill="#f1f3f7"/>
+  <path d="M623 520L675 552L623 584V520Z" fill="#1f2024"/>
+  <text x="512" y="642" fill="#d9dde6" font-family="Arial, sans-serif" font-size="22" font-weight="700">Watch Demo Video</text>
+</svg>
