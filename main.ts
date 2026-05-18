@@ -3,6 +3,7 @@ import { App, ItemView, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolde
 const VIEW_TYPE_LIFE_LEDGER = "life-ledger-dashboard";
 const DEFAULT_DATA_ROOT = "LifeLedger";
 const LEGACY_DATA_ROOT = "LifeLedger";
+const LEGACY_ACTIVITY_WALLET_INITIAL_AMOUNT = 1500;
 const DEFAULT_NORMAL_CATEGORIES = ["饮食", "交通", "购物", "学习", "娱乐", "生活费", "创业", "其他"];
 const DEFAULT_ASSET_CATEGORIES = [
   "银行卡储蓄",
@@ -165,7 +166,7 @@ interface HealthCheckResult {
 const DEFAULT_SETTINGS: LifeLedgerSettings = {
   dataRoot: DEFAULT_DATA_ROOT,
   systemStartMonth: getCurrentMonthString(),
-  activityWalletInitialAmount: 1500,
+  activityWalletInitialAmount: 0,
   reserveWalletInitialAmount: 0,
   assetWalletInitialAmount: 0,
   monthlyExpenseBudget: 0,
@@ -240,7 +241,16 @@ export default class LifeLedgerPlugin extends Plugin {
       }
     };
 
-    if (!loaded?.systemStartMonth) {
+    let shouldSaveSettings = !loaded?.systemStartMonth;
+    if (
+      this.settings.activityWalletInitialAmount === LEGACY_ACTIVITY_WALLET_INITIAL_AMOUNT &&
+      !(await this.hasAnyLedgerRecords())
+    ) {
+      this.settings.activityWalletInitialAmount = DEFAULT_SETTINGS.activityWalletInitialAmount;
+      shouldSaveSettings = true;
+    }
+
+    if (shouldSaveSettings) {
       await this.saveData(this.settings);
     }
   }
@@ -678,6 +688,21 @@ export default class LifeLedgerPlugin extends Plugin {
       .map((item) => item.record);
   }
 
+  private async hasAnyLedgerRecords(): Promise<boolean> {
+    const files = this.app.vault
+      .getMarkdownFiles()
+      .filter((file) => this.isLedgerCandidateFile(file.path));
+
+    for (const file of files) {
+      const content = await this.app.vault.read(file);
+      if (parseLedgerRecords(content).length > 0) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   private async scanLedgerFiles(
     result: HealthCheckResult,
     seenIds: Map<string, HealthIssue>
@@ -786,7 +811,13 @@ export default class LifeLedgerPlugin extends Plugin {
       result.errors.push({ filePath, recordId, message: "记录 category 缺失或为空。" });
     }
 
-    if (typeof record.amount !== "number" || !Number.isFinite(record.amount) || record.amount <= 0) {
+    const allowsNegativeAmount = record.type === "initial";
+    if (
+      typeof record.amount !== "number" ||
+      !Number.isFinite(record.amount) ||
+      record.amount === 0 ||
+      (!allowsNegativeAmount && record.amount < 0)
+    ) {
       result.errors.push({ filePath, recordId, message: "记录 amount 非法。" });
     }
 
@@ -1208,10 +1239,10 @@ class LifeLedgerSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("活动钱包初始金额")
-      .setDesc("用于计算本月活动钱包余额，默认 1500。")
+      .setDesc("用于计算本月活动钱包余额，默认 0。")
       .addText((text) => {
         text
-          .setPlaceholder("1500")
+          .setPlaceholder("0")
           .setValue(String(this.plugin.settings.activityWalletInitialAmount))
           .onChange(async (value) => {
             const amount = Number(value);
@@ -1636,8 +1667,9 @@ class LifeLedgerDashboardView extends ItemView {
         (distributionPair !== null &&
           (distributionPair.firstWallet === "asset" || distributionPair.secondWallet === "asset"));
 
-      if (!Number.isFinite(amount) || amount <= 0) {
-        new Notice("金额必须为正数");
+      const isInitialBalance = type === "initial";
+      if (!Number.isFinite(amount) || amount === 0 || (!isInitialBalance && amount < 0)) {
+        new Notice(isInitialBalance ? "期初余额金额不能为 0" : "金额必须为正数");
         amountInput.focus();
         return;
       }
@@ -1895,7 +1927,7 @@ class LifeLedgerDashboardView extends ItemView {
       details.createDiv({ text: getWalletDisplay(record), cls: "life-ledger-record-wallet" });
       details.createDiv({ text: record.category, cls: "life-ledger-record-category" });
       details.createDiv({
-        text: `${record.type === "expense" ? "-" : "+"}${formatMoney(record.amount)}`,
+        text: formatRecordAmount(record),
         cls: `life-ledger-record-amount is-${record.type}`
       });
       details.createDiv({ text: record.note || "无备注", cls: "life-ledger-record-note" });
@@ -1986,7 +2018,7 @@ class LifeLedgerDashboardView extends ItemView {
         cls: "life-ledger-record-category"
       });
       details.createDiv({
-        text: `${record.type === "expense" ? "-" : "+"}${formatMoney(record.amount)}`,
+        text: formatRecordAmount(record),
         cls: `life-ledger-record-amount is-${record.type}`
       });
       details.createDiv({ text: record.note || "无备注", cls: "life-ledger-record-note" });
@@ -2134,7 +2166,7 @@ class LifeLedgerDashboardView extends ItemView {
       item.createDiv({ text: record.category, cls: "life-ledger-record-category" });
       item.createDiv({ text: record.assetCategory || "无资产分类", cls: "life-ledger-record-category" });
       item.createDiv({
-        text: `${record.type === "expense" ? "-" : "+"}${formatMoney(record.amount)}`,
+        text: formatRecordAmount(record),
         cls: `life-ledger-record-amount is-${record.type}`
       });
       item.createDiv({ text: record.note || "无备注", cls: "life-ledger-record-note" });
@@ -2241,7 +2273,7 @@ class LifeLedgerDashboardView extends ItemView {
         cls: "life-ledger-record-category"
       });
       details.createDiv({
-        text: `${record.type === "expense" ? "-" : "+"}${formatMoney(record.amount)}`,
+        text: formatRecordAmount(record),
         cls: `life-ledger-record-amount is-${record.type}`
       });
       details.createDiv({ text: record.note || "无备注", cls: "life-ledger-record-note" });
@@ -2747,7 +2779,6 @@ function createNumberInput(parent: HTMLElement, label: string): HTMLInputElement
   const input = field.createEl("input");
   input.type = "number";
   input.placeholder = "0.00";
-  input.min = "0";
   input.step = "0.01";
   return input;
 }
@@ -3164,24 +3195,28 @@ function getBudgetWarningMessages(settings: LifeLedgerSettings, summary: MonthSu
 }
 
 function formatReviewRecord(record: LedgerRecord): string {
-  const sign = record.type === "expense" ? "-" : "+";
   const category =
     record.wallet === "asset" && record.assetCategory
       ? `${record.category} / ${record.assetCategory}`
       : record.category;
   const note = record.note || "无备注";
-  return `- ${record.date}｜${getTypeLabel(record.type)}｜${getWalletLabel(record.wallet)}｜${category}｜${sign}${formatMoney(record.amount)} 元｜${note}`;
+  return `- ${record.date}｜${getTypeLabel(record.type)}｜${getWalletLabel(record.wallet)}｜${category}｜${formatRecordAmount(record)} 元｜${note}`;
 }
 
 function formatYearlyReviewRecord(record: LedgerRecord): string {
-  const sign = record.type === "expense" ? "-" : "+";
   const assetCategory = record.assetCategory || "";
   const note = record.note || "无备注";
-  return `- ${record.date}｜${getTypeLabel(record.type)}｜${getWalletLabel(record.wallet)}｜${record.category}｜${assetCategory}｜${sign}${formatMoney(record.amount)} 元｜${note}`;
+  return `- ${record.date}｜${getTypeLabel(record.type)}｜${getWalletLabel(record.wallet)}｜${record.category}｜${assetCategory}｜${formatRecordAmount(record)} 元｜${note}`;
 }
 
 function formatPercent(amount: number, total: number): string {
   return `${(total > 0 ? (amount / total) * 100 : 0).toFixed(1)}%`;
+}
+
+function formatRecordAmount(record: LedgerRecord): string {
+  const signedAmount = record.type === "expense" ? -Math.abs(record.amount) : record.amount;
+  const sign = signedAmount < 0 ? "-" : "+";
+  return `${sign}${formatMoney(Math.abs(signedAmount))}`;
 }
 
 function createVerticalBar(

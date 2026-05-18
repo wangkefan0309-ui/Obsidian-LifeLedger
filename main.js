@@ -28,6 +28,7 @@ var import_obsidian = require("obsidian");
 var VIEW_TYPE_LIFE_LEDGER = "life-ledger-dashboard";
 var DEFAULT_DATA_ROOT = "LifeLedger";
 var LEGACY_DATA_ROOT = "LifeLedger";
+var LEGACY_ACTIVITY_WALLET_INITIAL_AMOUNT = 1500;
 var DEFAULT_NORMAL_CATEGORIES = ["\u996E\u98DF", "\u4EA4\u901A", "\u8D2D\u7269", "\u5B66\u4E60", "\u5A31\u4E50", "\u751F\u6D3B\u8D39", "\u521B\u4E1A", "\u5176\u4ED6"];
 var DEFAULT_ASSET_CATEGORIES = [
   "\u94F6\u884C\u5361\u50A8\u84C4",
@@ -55,7 +56,7 @@ var DEFAULT_SECTION_COLLAPSE_STATE = {
 var DEFAULT_SETTINGS = {
   dataRoot: DEFAULT_DATA_ROOT,
   systemStartMonth: getCurrentMonthString(),
-  activityWalletInitialAmount: 1500,
+  activityWalletInitialAmount: 0,
   reserveWalletInitialAmount: 0,
   assetWalletInitialAmount: 0,
   monthlyExpenseBudget: 0,
@@ -119,7 +120,12 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
         ...(loaded == null ? void 0 : loaded.collapsedSections) || {}
       }
     };
-    if (!(loaded == null ? void 0 : loaded.systemStartMonth)) {
+    let shouldSaveSettings = !(loaded == null ? void 0 : loaded.systemStartMonth);
+    if (this.settings.activityWalletInitialAmount === LEGACY_ACTIVITY_WALLET_INITIAL_AMOUNT && !(await this.hasAnyLedgerRecords())) {
+      this.settings.activityWalletInitialAmount = DEFAULT_SETTINGS.activityWalletInitialAmount;
+      shouldSaveSettings = true;
+    }
+    if (shouldSaveSettings) {
       await this.saveData(this.settings);
     }
   }
@@ -468,6 +474,16 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
       return dateCompare !== 0 ? dateCompare : a.index - b.index;
     }).map((item) => item.record);
   }
+  async hasAnyLedgerRecords() {
+    const files = this.app.vault.getMarkdownFiles().filter((file) => this.isLedgerCandidateFile(file.path));
+    for (const file of files) {
+      const content = await this.app.vault.read(file);
+      if (parseLedgerRecords(content).length > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
   async scanLedgerFiles(result, seenIds) {
     const files = this.app.vault.getMarkdownFiles().filter((file) => this.isLedgerCandidateFile(file.path));
     for (const file of files) {
@@ -550,7 +566,8 @@ var LifeLedgerPlugin = class extends import_obsidian.Plugin {
     if (typeof record.category !== "string" || record.category.trim().length === 0) {
       result.errors.push({ filePath, recordId, message: "\u8BB0\u5F55 category \u7F3A\u5931\u6216\u4E3A\u7A7A\u3002" });
     }
-    if (typeof record.amount !== "number" || !Number.isFinite(record.amount) || record.amount <= 0) {
+    const allowsNegativeAmount = record.type === "initial";
+    if (typeof record.amount !== "number" || !Number.isFinite(record.amount) || record.amount === 0 || !allowsNegativeAmount && record.amount < 0) {
       result.errors.push({ filePath, recordId, message: "\u8BB0\u5F55 amount \u975E\u6CD5\u3002" });
     }
     const wallet = isWalletType(record.wallet) ? record.wallet : hasWallet ? null : "activity";
@@ -886,8 +903,8 @@ var LifeLedgerSettingTab = class extends import_obsidian.PluginSettingTab {
       });
       text.inputEl.type = "month";
     });
-    new import_obsidian.Setting(containerEl).setName("\u6D3B\u52A8\u94B1\u5305\u521D\u59CB\u91D1\u989D").setDesc("\u7528\u4E8E\u8BA1\u7B97\u672C\u6708\u6D3B\u52A8\u94B1\u5305\u4F59\u989D\uFF0C\u9ED8\u8BA4 1500\u3002").addText((text) => {
-      text.setPlaceholder("1500").setValue(String(this.plugin.settings.activityWalletInitialAmount)).onChange(async (value) => {
+    new import_obsidian.Setting(containerEl).setName("\u6D3B\u52A8\u94B1\u5305\u521D\u59CB\u91D1\u989D").setDesc("\u7528\u4E8E\u8BA1\u7B97\u672C\u6708\u6D3B\u52A8\u94B1\u5305\u4F59\u989D\uFF0C\u9ED8\u8BA4 0\u3002").addText((text) => {
+      text.setPlaceholder("0").setValue(String(this.plugin.settings.activityWalletInitialAmount)).onChange(async (value) => {
         const amount = Number(value);
         this.plugin.settings.activityWalletInitialAmount = Number.isFinite(amount) ? amount : DEFAULT_SETTINGS.activityWalletInitialAmount;
         await this.plugin.saveSettings();
@@ -1203,8 +1220,9 @@ var LifeLedgerDashboardView = class extends import_obsidian.ItemView {
       const isRatioIncome = type === "income" && distributionModeSelect.value === "ratio";
       const distributionPair = isRatioIncome ? getDistributionPair(distributionPairSelect.value) : null;
       const requiresAssetCategory = wallet === "asset" || distributionPair !== null && (distributionPair.firstWallet === "asset" || distributionPair.secondWallet === "asset");
-      if (!Number.isFinite(amount) || amount <= 0) {
-        new import_obsidian.Notice("\u91D1\u989D\u5FC5\u987B\u4E3A\u6B63\u6570");
+      const isInitialBalance = type === "initial";
+      if (!Number.isFinite(amount) || amount === 0 || !isInitialBalance && amount < 0) {
+        new import_obsidian.Notice(isInitialBalance ? "\u671F\u521D\u4F59\u989D\u91D1\u989D\u4E0D\u80FD\u4E3A 0" : "\u91D1\u989D\u5FC5\u987B\u4E3A\u6B63\u6570");
         amountInput.focus();
         return;
       }
@@ -1417,7 +1435,7 @@ var LifeLedgerDashboardView = class extends import_obsidian.ItemView {
       details.createDiv({ text: getWalletDisplay(record), cls: "life-ledger-record-wallet" });
       details.createDiv({ text: record.category, cls: "life-ledger-record-category" });
       details.createDiv({
-        text: `${record.type === "expense" ? "-" : "+"}${formatMoney(record.amount)}`,
+        text: formatRecordAmount(record),
         cls: `life-ledger-record-amount is-${record.type}`
       });
       details.createDiv({ text: record.note || "\u65E0\u5907\u6CE8", cls: "life-ledger-record-note" });
@@ -1494,7 +1512,7 @@ var LifeLedgerDashboardView = class extends import_obsidian.ItemView {
         cls: "life-ledger-record-category"
       });
       details.createDiv({
-        text: `${record.type === "expense" ? "-" : "+"}${formatMoney(record.amount)}`,
+        text: formatRecordAmount(record),
         cls: `life-ledger-record-amount is-${record.type}`
       });
       details.createDiv({ text: record.note || "\u65E0\u5907\u6CE8", cls: "life-ledger-record-note" });
@@ -1618,7 +1636,7 @@ var LifeLedgerDashboardView = class extends import_obsidian.ItemView {
       item.createDiv({ text: record.category, cls: "life-ledger-record-category" });
       item.createDiv({ text: record.assetCategory || "\u65E0\u8D44\u4EA7\u5206\u7C7B", cls: "life-ledger-record-category" });
       item.createDiv({
-        text: `${record.type === "expense" ? "-" : "+"}${formatMoney(record.amount)}`,
+        text: formatRecordAmount(record),
         cls: `life-ledger-record-amount is-${record.type}`
       });
       item.createDiv({ text: record.note || "\u65E0\u5907\u6CE8", cls: "life-ledger-record-note" });
@@ -1709,7 +1727,7 @@ var LifeLedgerDashboardView = class extends import_obsidian.ItemView {
         cls: "life-ledger-record-category"
       });
       details.createDiv({
-        text: `${record.type === "expense" ? "-" : "+"}${formatMoney(record.amount)}`,
+        text: formatRecordAmount(record),
         cls: `life-ledger-record-amount is-${record.type}`
       });
       details.createDiv({ text: record.note || "\u65E0\u5907\u6CE8", cls: "life-ledger-record-note" });
@@ -2121,7 +2139,6 @@ function createNumberInput(parent, label) {
   const input = field.createEl("input");
   input.type = "number";
   input.placeholder = "0.00";
-  input.min = "0";
   input.step = "0.01";
   return input;
 }
@@ -2453,19 +2470,22 @@ function getBudgetWarningMessages(settings, summary) {
   return reminders;
 }
 function formatReviewRecord(record) {
-  const sign = record.type === "expense" ? "-" : "+";
   const category = record.wallet === "asset" && record.assetCategory ? `${record.category} / ${record.assetCategory}` : record.category;
   const note = record.note || "\u65E0\u5907\u6CE8";
-  return `- ${record.date}\uFF5C${getTypeLabel(record.type)}\uFF5C${getWalletLabel(record.wallet)}\uFF5C${category}\uFF5C${sign}${formatMoney(record.amount)} \u5143\uFF5C${note}`;
+  return `- ${record.date}\uFF5C${getTypeLabel(record.type)}\uFF5C${getWalletLabel(record.wallet)}\uFF5C${category}\uFF5C${formatRecordAmount(record)} \u5143\uFF5C${note}`;
 }
 function formatYearlyReviewRecord(record) {
-  const sign = record.type === "expense" ? "-" : "+";
   const assetCategory = record.assetCategory || "";
   const note = record.note || "\u65E0\u5907\u6CE8";
-  return `- ${record.date}\uFF5C${getTypeLabel(record.type)}\uFF5C${getWalletLabel(record.wallet)}\uFF5C${record.category}\uFF5C${assetCategory}\uFF5C${sign}${formatMoney(record.amount)} \u5143\uFF5C${note}`;
+  return `- ${record.date}\uFF5C${getTypeLabel(record.type)}\uFF5C${getWalletLabel(record.wallet)}\uFF5C${record.category}\uFF5C${assetCategory}\uFF5C${formatRecordAmount(record)} \u5143\uFF5C${note}`;
 }
 function formatPercent(amount, total) {
   return `${(total > 0 ? amount / total * 100 : 0).toFixed(1)}%`;
+}
+function formatRecordAmount(record) {
+  const signedAmount = record.type === "expense" ? -Math.abs(record.amount) : record.amount;
+  const sign = signedAmount < 0 ? "-" : "+";
+  return `${sign}${formatMoney(Math.abs(signedAmount))}`;
 }
 function createVerticalBar(parent, label, amount, maxAmount, tone) {
   const item = parent.createDiv({ cls: "life-ledger-vertical-bar-item" });
