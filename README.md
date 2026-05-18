@@ -2,9 +2,9 @@
 
 ## Demo
 
-[![LifeLedger Demo](assets/lifeledger-demo-cover.svg)](assets/LifeLedger-Demo.mp4)
+[![LifeLedger Demo](assets/lifeledger-demo-cover.svg)](https://raw.githubusercontent.com/wangkefan0309-ui/Obsidian-LifeLedger/main/assets/LifeLedger-Demo.mp4)
 
-[Watch the LifeLedger demo video](assets/LifeLedger-Demo.mp4)
+[Watch the LifeLedger demo video](https://raw.githubusercontent.com/wangkefan0309-ui/Obsidian-LifeLedger/main/assets/LifeLedger-Demo.mp4)
 
 **LifeLedger** 是一个面向 Obsidian 的本地化个人财务管理插件，旨在帮助用户在自己的知识库中完成日常记账、资产管理、支出分析与财务复盘。
 
