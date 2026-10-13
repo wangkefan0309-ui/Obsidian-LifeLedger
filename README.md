@@ -1,3 +1,13 @@
+# 此仓库已归档，维护已迁移
+
+作者 Silas 已停止维护此旧版 Obsidian-LifeLedger。最新源码、安装包、使用与个性化说明请前往 **[LifeLedger-Next](https://github.com/wangkefan0309-ui/LifeLedger-Next)**。
+
+新工程为重新开发的版本，旧插件数据不能直接覆盖新插件。请保留旧账本，在新版本重新建立账户；具体说明见新仓库 README。
+
+以下内容保留为旧版本的历史说明。
+
+---
+
 # Obsidian LifeLedger
 
 ## Demo
